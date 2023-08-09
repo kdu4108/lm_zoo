@@ -17,4 +17,4 @@ class BigramLM(nn.Module):
         return self.embeddings(x)  # shape: (batch_sz, max_context_width, vocab_sz)
 
     def loss(self, pred, target):
-        return torch.mean(F.cross_entropy(input=pred, target=target))
+        return F.cross_entropy(input=pred, target=target, reduction="mean")

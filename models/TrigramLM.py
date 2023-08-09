@@ -29,4 +29,4 @@ class TrigramLM(nn.Module):
         return self.linear(trigram_embs)  # shape: (batch_sz, max_context_width - 1, vocab_sz)
 
     def loss(self, pred, target):
-        return torch.mean(F.cross_entropy(input=pred, target=target))
+        return F.cross_entropy(input=pred, target=target, reduction="mean")

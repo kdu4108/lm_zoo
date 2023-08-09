@@ -18,7 +18,7 @@ class NgramLM(nn.Module):
     def pad(self, x):
         # Extend the context width by (self.num_preceding - 1) by adding a padding embedding of zeros to the beginning of each sequence.
         # We only need to pad by num_preceding - 1 because the first token in a training sequence counts as a preceding token
-        pad_emb = torch.zeros(size=(x.shape[0], self.num_preceding - 1, self.emb_sz))
+        pad_emb = torch.zeros(size=(x.shape[0], self.num_preceding - 1, self.emb_sz), device=x.device)
         return torch.cat([pad_emb, x], dim=1)
 
     def forward(self, x):
@@ -37,4 +37,4 @@ class NgramLM(nn.Module):
         return self.linear(ngram_embs)  # shape: (batch_sz, max_context_width, vocab_sz)
 
     def loss(self, pred, target):
-        return torch.mean(F.cross_entropy(input=pred, target=target))
+        return F.cross_entropy(input=pred, target=target, reduction="mean")

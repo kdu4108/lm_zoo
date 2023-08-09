@@ -46,7 +46,7 @@ def tokenize(text: str, tokenizer) -> torch.LongTensor:
 
 
 def make_batch(
-    tokens: torch.LongTensor, batch_size: int, max_context_width: int
+    tokens: torch.LongTensor, batch_size: int, max_context_width: int, device: torch.device
 ) -> Tuple[torch.LongTensor, torch.LongTensor]:
     """
     Args:
@@ -73,15 +73,79 @@ def make_batch(
             (start_idx + 1) : (start_idx + 1) + max_context_width
         ]  # the label for each token is the next token in tokens
 
-    return batch_X, batch_y
+    return batch_X.to(device), batch_y.to(device)
+
+
+def train_val_test_split(tokens: str, train_frac: float, val_frac: float, test_frac: float):
+    """
+    Splits the tokens into train, val, and test sets. NOTE: this does not shuffle the tokens,
+    so beware if the text distribution changes over the course of the text.
+
+    Args:
+        tokens: the tokens to split
+        train_frac: the fraction of tokens to use for training
+        val_frac: the fraction of tokens to use for validation
+        test_frac: the fraction of tokens to use for testing
+
+    Returns:
+        The train, val, and test sets, each as strings of tokens.
+    """
+    if train_frac + val_frac + test_frac != 1:
+        raise ValueError("train_frac + val_frac + test_frac must equal 1")
+    return (
+        tokens[: int(train_frac * len(tokens))],
+        tokens[int(train_frac * len(tokens)) : int((train_frac + val_frac) * len(tokens))],
+        tokens[int((train_frac + val_frac) * len(tokens)) :],
+    )
+
+
+def validation(model, val_tokens: str, val_batch_sz: int, max_context_width: int, device: torch.device):
+    """
+    Args:
+        model: the model to validate
+        val_tokens: the tokens to validate on
+        max_context_width: the maximum context width to use
+
+    Returns:
+        the validation loss
+    """
+    model.eval()
+    num_iters = (len(val_tokens) - max_context_width) // val_batch_sz
+    batches = []
+    for i in range(num_iters):
+        start_idxs = val_tokens[i * val_batch_sz : (i + 1) * val_batch_sz]
+        batch_X = torch.zeros(size=(val_batch_sz, max_context_width), dtype=torch.long)
+        batch_y = torch.zeros(size=(val_batch_sz, max_context_width), dtype=torch.long)
+        for i, start_idx in enumerate(start_idxs):
+            batch_X[i, :] = val_tokens[start_idx : start_idx + max_context_width]
+            batch_y[i, :] = val_tokens[
+                (start_idx + 1) : (start_idx + 1) + max_context_width
+            ]  # the label for each token is the next token in tokens
+
+        batches.append((batch_X.to(device), batch_y.to(device)))
+
+    total_loss = 0
+    total_num_examples = 0
+    for batch_X, batch_y in batches:
+        out = model(batch_X)
+        out = torch.reshape(out, shape=(-1, out.shape[-1]))  # shape: (batch_sz * max_context_width, vocab_sz)
+        batch_y = torch.reshape(batch_y, shape=(-1,))  # shape: (batch_sz * max_context_width)
+        total_loss += model.loss(out, batch_y) * len(batch_y)
+        total_num_examples += len(batch_y)
+    model.train()
+
+    return total_loss / total_num_examples
 
 
 def train(
     model: torch.nn.Module,
-    tokens: str,
+    train_tokens: str,
+    val_tokens: str,
     batch_size: int,
+    val_batch_sz: int,
     max_context_width: int,
     num_iters: int,
+    device: torch.device,
     lr: float = 1e-3,
 ):
     """
@@ -101,7 +165,7 @@ def train(
     optimizer = torch.optim.AdamW(params=model.parameters(), lr=lr)
     for i in range(num_iters):
         X, y = make_batch(
-            tokens, batch_size=batch_size, max_context_width=max_context_width
+            train_tokens, batch_size=batch_size, max_context_width=max_context_width, device=device
         )  # X.shape: (batch_sz, max_context_width), y.shape: (batch_sz, max_context_width)
         optimizer.zero_grad()
         out: torch.FloatTensor = model(X)  # shape: (batch_sz, max_context_width, vocab_sz)
@@ -112,13 +176,20 @@ def train(
         loss.backward()
         optimizer.step()
 
-        if i % 100 == 0:
-            print(loss)
+        if i % 1000 == 0:
+            val_loss = validation(
+                model,
+                val_tokens=val_tokens,
+                val_batch_sz=val_batch_sz,
+                max_context_width=max_context_width,
+                device=device,
+            )
+            print(f"Train loss: {loss}. Val loss: {val_loss}.")
 
     return model
 
 
-def generate(model, num_tokens: int, tokenizer):
+def generate(model, num_tokens: int, tokenizer, device: torch.device):
     """
     Generate a sequence of tokens from the model.
 
@@ -133,7 +204,7 @@ def generate(model, num_tokens: int, tokenizer):
     model.eval()
     tokens = [[0]]
     for _ in range(num_tokens):
-        out = model(torch.tensor(tokens))  # (bs, mcw, vs)
+        out = model(torch.tensor(tokens, device=device))  # (bs, mcw, vs)
         token = torch.multinomial(torch.softmax(out[0, -1, :], dim=0), 1).squeeze().item()
         tokens[0].append(token)
 
@@ -145,6 +216,7 @@ def generate(model, num_tokens: int, tokenizer):
 def main():
     NUM_ITERS = 10000
     BATCH_SIZE = 8
+    VAL_BATCH_SIZE = 64
     MAX_CONTEXT_WIDTH = 16
     NUM_GEN_TOKENS = 500
 
@@ -155,23 +227,28 @@ def main():
     text: str = load_data("data/tiny-shakespeare.txt")
     tokenizer = CharacterTokenizer(vocab=set(text))
     tokens: torch.LongTensor = tokenize(text, tokenizer=tokenizer)
+    train_tokens, val_tokens, test_tokens = train_val_test_split(tokens, 0.99, 0.001, 0.009)
+    print(len(train_tokens), len(val_tokens), len(test_tokens))
     # model = BigramLM(vocab_sz=tokenizer.vocab_sz).to(device=device)
     # model = TrigramLM(vocab_sz=tokenizer.vocab_sz).to(device=device)
     model = NgramLM(vocab_sz=tokenizer.vocab_sz, N=10).to(device=device)
     print(
         "Text before training:",
-        generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer),
+        generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer, device=device),
     )
     train(
         model,
-        tokens,
+        train_tokens=train_tokens,
+        val_tokens=val_tokens,
         batch_size=BATCH_SIZE,
+        val_batch_sz=VAL_BATCH_SIZE,
         max_context_width=MAX_CONTEXT_WIDTH,
         num_iters=NUM_ITERS,
+        device=device,
     )
     print(
         f"Text after training for {NUM_ITERS} iters:",
-        generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer),
+        generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer, device=device),
     )
 
 
