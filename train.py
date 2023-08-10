@@ -224,10 +224,16 @@ def main():
     MAX_CONTEXT_WIDTH = 16
     NUM_GEN_TOKENS = 500
     EMBEDDING_SZ = 16
-    MODEL_NAME, MODEL_KWARGS = "SelfAttentionLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "BigramLM", dict()  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "TrigramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "NgramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
+    # MODEL_NAME, MODEL_KWARGS = "AveragePrevEmbeddingsLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
+    # MODEL_NAME, MODEL_KWARGS = "WeightedAveragePrevEmbeddingsLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
+    # MODEL_NAME, MODEL_KWARGS = "SelfAttentionLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
+    MODEL_NAME, MODEL_KWARGS = "SelfAttentionNormWeightsLM", dict(
+        emb_sz=EMBEDDING_SZ
+    )  # This must match the class name exactly
+
     params_to_log = locals()
 
     WANDB_PROJECT_NAME = "lm_zoo"
