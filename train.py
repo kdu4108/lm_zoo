@@ -14,8 +14,6 @@ Notes:
 - NLL Loss at the start of training should be around -log(1/vocab size) because it's predicting the right value uniformly at random over the vocab
 - Get an early "hello world" that can do a forward pass and generate early and sanity check. e.g. a bigram model
 - Good default LR for big networks: 3e-4. For bigger networks can get away with bigger, like 1e-3
-- Decoder block: uses triangular masking so that current words can't see future ones! Encoder block: allows seeing full context, no triangular masking
-- Why normalize by sqrt(head size)? Goal: reduce the variance of the embedding to 1. Why? If the variance is high, then softmax will make too pointy of a probability/weights distribution (focus too much on one word)
 """
 import os
 import sys
@@ -226,9 +224,7 @@ def main():
     MAX_CONTEXT_WIDTH = 16
     NUM_GEN_TOKENS = 500
     EMBEDDING_SZ = 16
-    MODEL_NAME, MODEL_KWARGS = "WeightedAveragePrevEmbeddingsLM", dict(
-        emb_sz=EMBEDDING_SZ
-    )  # This must match the class name exactly
+    MODEL_NAME, MODEL_KWARGS = "SelfAttentionLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "BigramLM", dict()  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "TrigramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "NgramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
