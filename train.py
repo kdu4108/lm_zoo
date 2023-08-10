@@ -18,12 +18,14 @@ Notes:
 - Why normalize by sqrt(head size)? Goal: reduce the variance of the embedding to 1. Why? If the variance is high, then softmax will make too pointy of a probability/weights distribution (focus too much on one word)
 """
 import os
+import sys
 from typing import Tuple, Union
 
 import torch
+import wandb
 
 from tokenizers import CharacterTokenizer
-from models import BigramLM, TrigramLM, NgramLM
+from models import BigramLM, TrigramLM, NgramLM, AveragePrevEmbeddingsLM
 
 
 def load_data(path: Union[str, os.PathLike]) -> str:
@@ -184,7 +186,10 @@ def train(
                 max_context_width=max_context_width,
                 device=device,
             )
+            wandb.log({"val_loss": val_loss})
             print(f"Train loss: {loss}. Val loss: {val_loss}.")
+
+        wandb.log({"train_loss": loss})
 
     return model
 
@@ -214,14 +219,34 @@ def generate(model, num_tokens: int, tokenizer, device: torch.device):
 
 
 def main():
+    SEED = 0
     NUM_ITERS = 10000
     BATCH_SIZE = 8
     VAL_BATCH_SIZE = 64
     MAX_CONTEXT_WIDTH = 16
     NUM_GEN_TOKENS = 500
+    EMBEDDING_SZ = 16
+    MODEL_NAME, MODEL_KWARGS = "AveragePrevEmbeddingsLM", dict(
+        emb_sz=EMBEDDING_SZ
+    )  # This must match the class name exactly
+    # MODEL_NAME, MODEL_KWARGS = "BigramLM", dict()  # This must match the class name exactly
+    # MODEL_NAME, MODEL_KWARGS = "TrigramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
+    # MODEL_NAME, MODEL_KWARGS = "NgramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
+    params_to_log = locals()
+
+    WANBD_PROJECT_NAME = "lm_zoo"
+    TAGS = []
+    run = wandb.init(
+        project=WANBD_PROJECT_NAME,
+        entity="kdu",
+        # group=GROUP_NAME,
+        config=params_to_log,
+        tags=TAGS,
+    )
+
+    torch.random.manual_seed(SEED)
 
     device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-
     print(f"Using device: {device}")
 
     text: str = load_data("data/tiny-shakespeare.txt")
@@ -229,13 +254,16 @@ def main():
     tokens: torch.LongTensor = tokenize(text, tokenizer=tokenizer)
     train_tokens, val_tokens, test_tokens = train_val_test_split(tokens, 0.99, 0.001, 0.009)
     print(len(train_tokens), len(val_tokens), len(test_tokens))
+
     # model = BigramLM(vocab_sz=tokenizer.vocab_sz).to(device=device)
     # model = TrigramLM(vocab_sz=tokenizer.vocab_sz).to(device=device)
-    model = NgramLM(vocab_sz=tokenizer.vocab_sz, N=10).to(device=device)
-    print(
-        "Text before training:",
-        generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer, device=device),
-    )
+    # model = NgramLM(vocab_sz=tokenizer.vocab_sz, N=10).to(device=device)
+    model = getattr(sys.modules[__name__], MODEL_NAME)(vocab_sz=tokenizer.vocab_sz, **MODEL_KWARGS).to(device=device)
+
+    text_before_training = generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer, device=device)
+    print("Text before training:", text_before_training)
+    wandb.log({"text_before_training": text_before_training})
+
     train(
         model,
         train_tokens=train_tokens,
@@ -246,12 +274,11 @@ def main():
         num_iters=NUM_ITERS,
         device=device,
     )
-    print(
-        f"Text after training for {NUM_ITERS} iters:",
-        generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer, device=device),
-    )
+
+    text_after_training = generate(model, num_tokens=NUM_GEN_TOKENS, tokenizer=tokenizer, device=device)
+    print(f"Text after training for {NUM_ITERS} iters:", text_after_training)
+    wandb.log({"text_after_training": text_after_training})
 
 
 if __name__ == "__main__":
-    torch.random.manual_seed(0)
     main()
