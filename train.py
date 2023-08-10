@@ -25,7 +25,7 @@ import torch
 import wandb
 
 from tokenizers import CharacterTokenizer
-from models import BigramLM, TrigramLM, NgramLM, AveragePrevEmbeddingsLM
+from models import *
 
 
 def load_data(path: Union[str, os.PathLike]) -> str:
@@ -226,7 +226,7 @@ def main():
     MAX_CONTEXT_WIDTH = 16
     NUM_GEN_TOKENS = 500
     EMBEDDING_SZ = 16
-    MODEL_NAME, MODEL_KWARGS = "AveragePrevEmbeddingsLM", dict(
+    MODEL_NAME, MODEL_KWARGS = "WeightedAveragePrevEmbeddingsLM", dict(
         emb_sz=EMBEDDING_SZ
     )  # This must match the class name exactly
     # MODEL_NAME, MODEL_KWARGS = "BigramLM", dict()  # This must match the class name exactly
@@ -234,10 +234,10 @@ def main():
     # MODEL_NAME, MODEL_KWARGS = "NgramLM", dict(emb_sz=EMBEDDING_SZ)  # This must match the class name exactly
     params_to_log = locals()
 
-    WANBD_PROJECT_NAME = "lm_zoo"
+    WANDB_PROJECT_NAME = "lm_zoo"
     TAGS = []
     run = wandb.init(
-        project=WANBD_PROJECT_NAME,
+        project=WANDB_PROJECT_NAME,
         entity="kdu",
         # group=GROUP_NAME,
         config=params_to_log,
